@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response, jsonify, abort
+from flask import Flask, render_template, Response, jsonify, abort, send_from_directory
 from flask_socketio import SocketIO, emit
 import seamless_player
 import threading
@@ -331,6 +331,17 @@ def state_updater():
 def index():
     """Serves the main HTML page."""
     return render_template("index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Serves the site favicon from the static directory."""
+    return send_from_directory(
+        app.static_folder,
+        "favicon.ico",
+        mimetype="image/vnd.microsoft.icon",
+        cache_timeout=0,
+    )
 
 
 @app.route("/status")
