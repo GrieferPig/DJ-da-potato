@@ -11,3 +11,4 @@ Flask-SocketIO>=5.3.6
 python-socketio>=5.11.3
 python-engineio>=4.9.1
 simple-websocket>=0.10.1
+gunicorn

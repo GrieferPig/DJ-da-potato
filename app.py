@@ -335,18 +335,40 @@ def handle_connect():
     emit("track_state", dict(web_state))
 
 
-if __name__ == "__main__":
-    # Initialize the player (loads library, etc.)
-    if not seamless_player.initialize_player():
-        raise SystemExit(1)
+# --- Application Initialization ---
 
-    # Start the DJ logic in a background thread
-    dj_thread = threading.Thread(target=audio_producer, daemon=True)
-    dj_thread.start()
 
-    # Start the state updater in a background thread
-    state_thread = threading.Thread(target=state_updater, daemon=True)
-    state_thread.start()
+# This function will start our background threads.
+# It's safe to use socketio.start_background_task in both environments.
+def start_background_tasks():
+    socketio.start_background_task(target=audio_producer)
+    socketio.start_background_task(target=state_updater)
 
-    print("Starting Flask Socket.IO server...")
-    socketio.run(app, host="0.0.0.0", port=5000, use_reloader=False)
+
+# Always initialize the player, regardless of environment.
+if not seamless_player.initialize_player():
+    raise SystemExit(
+        "Fatal: Could not initialize the seamless player. Is the library built?"
+    )
+
+import os
+
+# Check if we're running under Gunicorn by looking for its environment variable.
+IS_GUNICORN = "GUNICORN_PID" in os.environ
+
+if IS_GUNICORN:
+    # --- PRODUCTION MODE ---
+    # Gunicorn is running the app. It will handle the web server part.
+    # We just need to make sure our background tasks get started.
+    print("Gunicorn environment detected. Starting background tasks...")
+    start_background_tasks()
+else:
+    # --- DEVELOPMENT MODE ---
+    # The script is being run directly (e.g., `python app.py`).
+    # We need to start the background tasks AND the development server.
+    if __name__ == "__main__":
+        print(
+            "Development environment detected. Starting background tasks and dev server..."
+        )
+        start_background_tasks()
+        socketio.run(app, host="0.0.0.0", port=5000, use_reloader=False)
