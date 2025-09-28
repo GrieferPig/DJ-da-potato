@@ -5,7 +5,14 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+import queue
 import numpy as np
+
+try:
+    from eventlet.queue import Empty as EventletQueueEmpty
+except ImportError:  # pragma: no cover - eventlet optional
+    EventletQueueEmpty = None
+
 
 app = Flask(__name__)
 socketio = SocketIO(
@@ -23,7 +30,16 @@ audio_sequence = 0
 history_lock = threading.Lock()
 audio_config = {}
 config_lock = threading.Lock()
-config_announced = False
+
+audio_chunk_queue = queue.Queue(maxsize=128)
+audio_encoder_thread = None
+encoder_thread_lock = threading.Lock()
+forwarder_lock = threading.Lock()
+forwarder_started = False
+
+QUEUE_EMPTY_EXCEPTIONS = (
+    (queue.Empty,) if EventletQueueEmpty is None else (queue.Empty, EventletQueueEmpty)
+)
 
 
 def set_audio_config(sample_rate: int, channels: int, block_size: int) -> None:
@@ -176,9 +192,9 @@ def build_track_display_metadata(track_info: dict | None) -> dict:
     return metadata
 
 
-def audio_producer():
-    """Launches the DJ logic and broadcasts mixed audio chunks over Socket.IO."""
-    global audio_sequence, config_announced
+def audio_encoder_worker():
+    """Mixes audio chunks and places encoded PCM data onto a queue."""
+    global audio_sequence, audio_encoder_thread
 
     dj_thread = threading.Thread(
         target=seamless_player.run_dj_logic_headless,
@@ -192,9 +208,9 @@ def audio_producer():
     seconds_per_chunk = frames / float(samplerate) if samplerate else 0.05
 
     set_audio_config(samplerate, channels, frames)
-    if not config_announced:
-        socketio.emit("audio_config", get_audio_config_snapshot())
-        config_announced = True
+    snapshot = get_audio_config_snapshot()
+    if snapshot:
+        audio_chunk_queue.put({"type": "config", "data": snapshot})
 
     while True:
         if not seamless_player.player_state.get("is_playing", False):
@@ -209,12 +225,9 @@ def audio_producer():
         clipped_chunk = np.clip(mixed_chunk, -1.0, 1.0)
         chunk_bytes = (clipped_chunk * 32767).astype(np.int16).tobytes()
 
-        with history_lock:
-            payload = {"seq": audio_sequence, "chunk": chunk_bytes}
-            audio_history.append(payload)
-            audio_sequence += 1
-
-        socketio.emit("audio_chunk", payload)
+        payload = {"seq": audio_sequence, "chunk": chunk_bytes}
+        audio_chunk_queue.put({"type": "chunk", "data": payload})
+        audio_sequence += 1
 
         elapsed = time.time() - loop_start
         sleep_time = seconds_per_chunk - elapsed
@@ -224,7 +237,42 @@ def audio_producer():
     with history_lock:
         audio_history.clear()
         audio_sequence = 0
-    config_announced = False
+
+    audio_chunk_queue.put({"type": "stop"})
+
+    with encoder_thread_lock:
+        audio_encoder_thread = None
+
+
+def audio_forwarder():
+    """Reads encoded audio messages from the queue and forwards via Socket.IO."""
+    global forwarder_started
+    while True:
+        try:
+            message = audio_chunk_queue.get_nowait()
+        except QUEUE_EMPTY_EXCEPTIONS:
+            socketio.sleep(0.01)
+            continue
+
+        if message is None:
+            socketio.sleep(0.01)
+            continue
+
+        msg_type = message.get("type")
+        data = message.get("data")
+
+        if msg_type == "config" and data:
+            socketio.emit("audio_config", data)
+        elif msg_type == "chunk" and data:
+            with history_lock:
+                audio_history.append(data)
+            socketio.emit("audio_chunk", data)
+        elif msg_type == "stop":
+            with forwarder_lock:
+                forwarder_started = False
+            break
+
+        socketio.sleep(0)
 
 
 def state_updater():
@@ -276,7 +324,7 @@ def state_updater():
         web_state["uptime_seconds"] = max(0, int(now - SERVER_START_TIME))
 
         socketio.emit("track_state", dict(web_state))
-        time.sleep(1)
+        socketio.sleep(1)
 
 
 @app.route("/")
@@ -341,7 +389,21 @@ def handle_connect():
 # This function will start our background threads.
 # It's safe to use socketio.start_background_task in both environments.
 def start_background_tasks():
-    socketio.start_background_task(target=audio_producer)
+    global audio_encoder_thread, forwarder_started
+
+    with encoder_thread_lock:
+        if audio_encoder_thread is None or not audio_encoder_thread.is_alive():
+            audio_encoder_thread = threading.Thread(
+                target=audio_encoder_worker,
+                daemon=True,
+            )
+            audio_encoder_thread.start()
+
+    with forwarder_lock:
+        if not forwarder_started:
+            socketio.start_background_task(target=audio_forwarder)
+            forwarder_started = True
+
     socketio.start_background_task(target=state_updater)
 
 
