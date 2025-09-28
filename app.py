@@ -1,12 +1,7 @@
-import eventlet
-
-eventlet.monkey_patch()
-
-from eventlet.semaphore import Semaphore
-
 from flask import Flask, render_template, Response, jsonify, abort
 from flask_socketio import SocketIO, emit
 import seamless_player
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -25,11 +20,10 @@ SERVER_START_TIME = time.time()
 AUDIO_HISTORY_SIZE = 64  # Keep a few seconds of recent audio for late joiners
 audio_history = deque(maxlen=AUDIO_HISTORY_SIZE)
 audio_sequence = 0
-history_lock = Semaphore(1)
+history_lock = threading.Lock()
 audio_config = {}
-config_lock = Semaphore(1)
+config_lock = threading.Lock()
 config_announced = False
-background_tasks_started = False
 
 
 def set_audio_config(sample_rate: int, channels: int, block_size: int) -> None:
@@ -183,8 +177,14 @@ def build_track_display_metadata(track_info: dict | None) -> dict:
 
 
 def audio_producer():
-    """Broadcasts mixed audio chunks over Socket.IO in an eventlet-friendly way."""
+    """Launches the DJ logic and broadcasts mixed audio chunks over Socket.IO."""
     global audio_sequence, config_announced
+
+    dj_thread = threading.Thread(
+        target=seamless_player.run_dj_logic_headless,
+        daemon=True,
+    )
+    dj_thread.start()
 
     samplerate = seamless_player.player_state.get("samplerate", 44100)
     channels = seamless_player.player_state.get("channels", 2)
@@ -201,7 +201,7 @@ def audio_producer():
             break
 
         if seamless_player.player_state.get("deck_a") is None:
-            socketio.sleep(0.05)
+            time.sleep(0.05)
             continue
 
         loop_start = time.time()
@@ -219,9 +219,7 @@ def audio_producer():
         elapsed = time.time() - loop_start
         sleep_time = seconds_per_chunk - elapsed
         if sleep_time > 0:
-            socketio.sleep(sleep_time)
-        else:
-            socketio.sleep(0)
+            time.sleep(sleep_time)
 
     with history_lock:
         audio_history.clear()
@@ -278,7 +276,7 @@ def state_updater():
         web_state["uptime_seconds"] = max(0, int(now - SERVER_START_TIME))
 
         socketio.emit("track_state", dict(web_state))
-        socketio.sleep(1)
+        time.sleep(1)
 
 
 @app.route("/")
@@ -343,15 +341,8 @@ def handle_connect():
 # This function will start our background threads.
 # It's safe to use socketio.start_background_task in both environments.
 def start_background_tasks():
-    global background_tasks_started
-
-    if background_tasks_started:
-        return
-
-    background_tasks_started = True
-    socketio.start_background_task(seamless_player.run_dj_logic_headless)
-    socketio.start_background_task(audio_producer)
-    socketio.start_background_task(state_updater)
+    socketio.start_background_task(target=audio_producer)
+    socketio.start_background_task(target=state_updater)
 
 
 # Always initialize the player, regardless of environment.
