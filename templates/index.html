@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seamless DJ Stream</title>
+    <title>Ponies at Dawn - 24hr Web Radio</title>
     <style>
         :root {
             color-scheme: dark;
@@ -355,7 +355,7 @@
     </div>
 
     <div class="player-container">
-        <h1>Live DJ Stream</h1>
+        <h1>P@D Web Radio Station</h1>
         <div class="track-info">
             <h2>Now Playing</h2>
             <p id="current-song" class="track-title">Loading...</p>
@@ -399,8 +399,8 @@
             </div>
         </div>
         <div class="track-counter">
-            <p id="track-count">Tracks played: 0</p>
-            <p id="uptime">Uptime: 0s</p>
+            <p id="track-count">Bangers played: 0</p>
+            <p id="uptime">Serving P@D bangers for: 0s</p>
         </div>
         <div class="controls">
             <button class="play-toggle" id="play-toggle">Start stream</button>
@@ -411,7 +411,9 @@
                     aria-label="Volume">
             </div>
         </div>
-        <p class="play-hint" id="play-hint">Click “Start stream” to enable audio playback.</p>
+        <p class="play-hint" id="play-hint">Powered by <a class="meta-link"
+                href="https://github.com/GrieferPig/DJ-da-potato" target="_blank" rel="noopener">DJ da potato</a> by
+            GrieferPig</p>
     </div>
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
@@ -505,7 +507,7 @@
             }
 
             const elapsedSeconds = computeElapsedSeconds();
-            uptimeEl.textContent = `Uptime: ${formatDuration(elapsedSeconds)}`;
+            uptimeEl.textContent = `Serving P@D bangers for: ${formatDuration(elapsedSeconds)}`;
         }
 
         function ensureUptimeTimer() {
@@ -675,7 +677,7 @@
 
             element.textContent = displayName;
             if (isValidName) {
-                element.href = `https://example.com/albums/${encodeURIComponent(displayName)}`;
+                element.href = `https://poniesatdawn.bandcamp.com/album/${encodeURIComponent(displayName)}`;
                 element.classList.remove('is-disabled');
             } else {
                 element.href = '#';
@@ -867,9 +869,9 @@
                     }
                 }
                 isMuted = false;
-                if (playHint) {
-                    playHint.textContent = 'Streaming…';
-                }
+                // if (playHint) {
+                //     playHint.innerHTML = 'Powered by <a class="meta-link" href="https://example.com" target="_blank" rel="noopener">DJ da potato</a> from GrieferPig';
+                // }
                 playButton.textContent = 'Mute stream';
                 applyVolume();
                 drainQueue();

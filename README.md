@@ -2,7 +2,7 @@
 
 Automatic web radio station w/ smart transition
 
-[Demo here](https://example.com)
+[Demo here](https://listen2pad.online)
 
 ## What it does
 
