@@ -25,6 +25,8 @@ pip3 install -r requirements.txt
 python3 library_manager.py
 ```
 
+> **Note:** The web stack now runs on [eventlet](https://eventlet.net/) for cooperative concurrency. The dependency is already included in `requirements.txt`, but if you're deploying with Gunicorn remember to use the eventlet worker class, e.g. `gunicorn -k eventlet -w 1 app:app`.
+
 Subsequent analyzes will skip the ones that are already analyzed. Neat™, huh?
 
 Then launch the server using
