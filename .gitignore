@@ -5,3 +5,10 @@ drafts
 *.dll
 music_library.json
 music/
+
+bin/
+lib/
+lib64
+music/
+pyvenv.cfg
+share/

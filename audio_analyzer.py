@@ -57,6 +57,16 @@ def analyze_song(audio_file_path):
         beat_probs = beat_downbeat_probs[:, 0]
         downbeat_probs = beat_downbeat_probs[:, 1]
 
+        # Normalize beat probabilities
+        min_val = np.min(beat_probs)
+        max_val = np.max(beat_probs)
+        beat_probs = (beat_probs - min_val) / (max_val - min_val)
+
+        # Normalize downbeat probabilities
+        min_val = np.min(downbeat_probs)
+        max_val = np.max(downbeat_probs)
+        downbeat_probs = (downbeat_probs - min_val) / (max_val - min_val)
+
         # Find peaks in beat probabilities to estimate BPM
         beat_peak_indices, _ = find_peaks(
             beat_probs, height=PEAK_HEIGHT, distance=PEAK_DISTANCE
@@ -77,8 +87,8 @@ def analyze_song(audio_file_path):
             )
             return None
 
-        the_mode = mode(beat_peak_distances, keepdims=True).mode[0]
-        error_margin = 0.20 * the_mode  # Increased margin for more flexibility
+        the_mode = mode(beat_peak_distances).mode
+        error_margin = 0.10 * the_mode  # Changed to 10% margin
         lower_bound = the_mode - error_margin
         upper_bound = the_mode + error_margin
 
@@ -98,26 +108,43 @@ def analyze_song(audio_file_path):
         bpm = 60 / (avg_distance * (1 / FPS))
 
         # Adjust BPM to a typical musical range
-        while bpm < 70:
+        if bpm < 70:
             bpm *= 2
-        while bpm > 180:
+        if bpm > 180:
             bpm /= 2
         estimated_bpm = round(bpm)
         logging.info(f"Estimated BPM: {estimated_bpm}")
 
         # --- Downbeat and Time Signature Extraction ---
         downbeat_peak_indices, _ = find_peaks(
-            downbeat_probs, height=PEAK_HEIGHT, distance=PEAK_DISTANCE * 2
+            downbeat_probs,
+            height=PEAK_HEIGHT,
+            distance=PEAK_DISTANCE,  # Changed to PEAK_DISTANCE (5)
         )
         downbeat_timestamps = (downbeat_peak_indices / FPS).tolist()
 
         beats_per_bar = 4  # Default to 4/4
         if len(downbeat_peak_indices) > 1:
-            avg_downbeat_distance = np.mean(np.diff(downbeat_peak_indices))
-            beats_per_bar = round(avg_downbeat_distance / avg_distance)
-            # Ensure a sensible time signature
-            if beats_per_bar not in [2, 3, 4, 5, 6, 7]:
-                beats_per_bar = 4
+            downbeat_distances = np.diff(downbeat_peak_indices)
+
+            # Apply the same filtering to downbeat distances as we did for beat distances
+            downbeat_mode = mode(downbeat_distances).mode
+            downbeat_error_margin = 0.10 * downbeat_mode
+            downbeat_lower_bound = downbeat_mode - downbeat_error_margin
+            downbeat_upper_bound = downbeat_mode + downbeat_error_margin
+
+            # Filter downbeat distances
+            filtered_downbeat_distances = downbeat_distances[
+                (downbeat_distances >= downbeat_lower_bound)
+                & (downbeat_distances <= downbeat_upper_bound)
+            ]
+
+            # Calculate average from filtered distances
+            avg_downbeat_distance = np.mean(filtered_downbeat_distances)
+            # Estimate time signature
+            beats_per_bar = round(
+                avg_downbeat_distance / avg_distance
+            )  # Simplified, no fallback checks
 
         logging.info(f"Estimated Beats Per Bar: {beats_per_bar}")
 

@@ -335,6 +335,32 @@ def audio_callback(outdata, frames, time, status):
     outdata[:] = get_mixed_chunk(frames)
 
 
+def find_and_set_next_track(current_info, unplayed_tracks, library):
+    """Finds the next track, updates deck_b_info, and returns the modified unplayed_tracks list."""
+    if not unplayed_tracks:
+        logging.info("--- ENTIRE LIBRARY PLAYED, RE-SHUFFLING ---")
+        unplayed_tracks = [t for t in library if t["path"] != current_info["path"]]
+        if not unplayed_tracks:
+            logging.info("Only one song in library. Cannot re-shuffle.")
+            player_state["is_playing"] = False
+            return unplayed_tracks
+        random.shuffle(unplayed_tracks)
+
+    next_info = find_best_next_track(current_info, unplayed_tracks)
+    if not next_info:
+        logging.warning("Could not find a next track to pre-load. Stopping.")
+        player_state["is_playing"] = False
+        return unplayed_tracks
+
+    logging.info("=" * 50)
+    logging.info(f"🎧 Pre-selecting Next Up: {os.path.basename(next_info['path'])}")
+    player_state["deck_b_info"] = next_info
+    update_deck_cover("deck_b", next_info)
+
+    # Return the updated list of unplayed tracks
+    return [t for t in unplayed_tracks if t["path"] != next_info["path"]]
+
+
 # --- The DJ "Brain" Thread ---
 def run_dj_logic_headless():
     """
@@ -365,6 +391,11 @@ def run_dj_logic_headless():
     player_state["tracks_played_count"] = 1
     logging.info(
         f"▶️ Starting with: {os.path.basename(player_state['deck_a_info']['path'])}"
+    )
+
+    # Immediately find the next track to populate the UI
+    unplayed_tracks = find_and_set_next_track(
+        player_state["deck_a_info"], unplayed_tracks, library
     )
 
     while player_state["is_playing"]:
@@ -398,37 +429,18 @@ def run_dj_logic_headless():
             and player_state["play_pos"] > mix_point_samples
         ):
             current_info = player_state["deck_a_info"]
+            next_info = player_state["deck_b_info"]  # Already selected
 
-            # 1. Find and load the next track onto Deck B
-            if not unplayed_tracks:
-                logging.info("--- ENTIRE LIBRARY PLAYED, RE-SHUFFLING ---")
-                unplayed_tracks = [
-                    t for t in library if t["path"] != current_info["path"]
-                ]
-                if not unplayed_tracks:
-                    logging.info("Only one song in library. Cannot re-shuffle.")
-                    player_state["is_playing"] = False
-                    continue
-                random.shuffle(unplayed_tracks)
-
-            next_info = find_best_next_track(current_info, unplayed_tracks)
             if not next_info:
-                logging.warning("Could not find a next track. Stopping.")
+                logging.warning("Next track info not found. Stopping.")
                 player_state["is_playing"] = False
                 continue
 
-            # Remove the chosen track from the unplayed list
-            unplayed_tracks = [
-                t for t in unplayed_tracks if t["path"] != next_info["path"]
-            ]
-
-            logging.info("=" * 50)
-            logging.info(f"🎧 Next Up: {os.path.basename(next_info['path'])}")
-            player_state["deck_b_info"] = next_info
+            # 1. Load the pre-selected next track onto Deck B
+            logging.info(f"Mixing from {current_info['bpm']:.2f} BPM...")
             player_state["deck_b"] = load_and_prepare_track(
                 next_info, target_bpm=current_info["bpm"]
             )
-            update_deck_cover("deck_b", next_info)
 
             # 2. Find the downbeat to align to
             current_play_time_sec = (
@@ -512,6 +524,12 @@ def run_dj_logic_headless():
             player_state["deck_b_cover_version"] = 0
             player_state["fader"] = -1.0
             player_state["tracks_played_count"] += 1
+
+            # Immediately find the *next* track for the new Deck A
+            if player_state["is_playing"]:
+                unplayed_tracks = find_and_set_next_track(
+                    player_state["deck_a_info"], unplayed_tracks, library
+                )
 
 
 def initialize_player():
