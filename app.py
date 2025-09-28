@@ -161,6 +161,14 @@ def build_track_display_metadata(track_info: dict | None) -> dict:
     ):
         metadata["album"] = album.strip()
 
+    # Do a final check whether the title contains a hyphen and split it if it looks like "Artist - Title"
+    # edit: what a patchwork but it works for now
+    if " - " in metadata["track_title"]:
+        parts = metadata["track_title"].split(" - ", 1)
+        if len(parts) == 2:
+            metadata["artist"] = parts[0].strip()
+            metadata["track_title"] = parts[1].strip()
+
     return metadata
 
 

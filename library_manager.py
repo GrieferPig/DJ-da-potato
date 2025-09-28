@@ -48,7 +48,7 @@ def build_library(music_dir, library_path):
     all_song_data = []
 
     # Use ProcessPoolExecutor to run analysis in parallel, which is much faster
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         future_to_file = {
             executor.submit(analyze_song, file_path): file_path
             for file_path in files_to_process
