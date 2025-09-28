@@ -14,6 +14,8 @@ socketio = SocketIO(
     engineio_options={"transports": ["websocket"]},
 )
 
+SERVER_START_TIME = time.time()
+
 # --- Audio streaming buffer ---
 AUDIO_HISTORY_SIZE = 64  # Keep a few seconds of recent audio for late joiners
 audio_history = deque(maxlen=AUDIO_HISTORY_SIZE)
@@ -52,6 +54,8 @@ web_state = {
     "next_album": "Unknown Album",
     "next_artist": "Unknown Artist",
     "next_track_title": "Unknown Title",
+    "server_started_at": SERVER_START_TIME,
+    "uptime_seconds": 0,
 }
 
 
@@ -226,6 +230,7 @@ def audio_producer():
 def state_updater():
     """Periodically updates the web state from the player state."""
     while True:
+        now = time.time()
         deck_a_info = seamless_player.player_state.get("deck_a_info")
         deck_b_info = seamless_player.player_state.get("deck_b_info")
 
@@ -266,6 +271,9 @@ def state_updater():
         web_state["next_cover_version"] = seamless_player.player_state.get(
             "deck_b_cover_version", 0
         )
+
+        web_state["server_started_at"] = SERVER_START_TIME
+        web_state["uptime_seconds"] = max(0, int(now - SERVER_START_TIME))
 
         socketio.emit("track_state", dict(web_state))
         time.sleep(1)

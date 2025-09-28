@@ -12,7 +12,7 @@ import threading
 from mutagen import File as MutagenFile
 
 # --- Configuration ---
-LIBRARY_FILE = "music_library.json"
+ANALYTICS_DIRECTORY = "analytics"
 MIX_POINT_SECONDS = 30  # Start looking for a mix point 30 seconds before the end
 CROSSFADE_SECONDS = 10
 FALLBACK_THRESHOLD_SECONDS = 15
@@ -94,6 +94,42 @@ def calculate_key_compatibility(key1, key2):
     if distance == 2:
         return 50
     return 25
+
+
+def load_library_from_analytics(directory=ANALYTICS_DIRECTORY):
+    """Loads all per-track analytics files into a list of track dictionaries."""
+    analytics_files = []
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_file() and entry.name.lower().endswith(".json"):
+                    analytics_files.append(entry.path)
+    except FileNotFoundError:
+        logging.error(
+            f"Analytics directory '{directory}' not found. Please run library_manager.py first."
+        )
+        return []
+    except OSError as exc:
+        logging.error(f"Failed to read analytics directory '{directory}': {exc}.")
+        return []
+
+    tracks = []
+    for file_path in sorted(analytics_files):
+        try:
+            with open(file_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if isinstance(data, dict) and data.get("path"):
+                tracks.append(data)
+            else:
+                logging.warning(
+                    f"Analytics file '{os.path.basename(file_path)}' missing required fields; skipping."
+                )
+        except (OSError, json.JSONDecodeError) as exc:
+            logging.warning(
+                f"Could not load analytics file '{os.path.basename(file_path)}': {exc}"
+            )
+
+    return tracks
 
 
 def find_best_next_track(current_track, available_tracks):
@@ -367,14 +403,10 @@ def run_dj_logic_headless():
     The core DJ logic loop, designed to be run in a thread without direct audio output.
     It's controlled by the player_state and signals transitions.
     """
-    try:
-        with open(LIBRARY_FILE, "r") as f:
-            library = json.load(f)
-        if not library:
-            raise FileNotFoundError("Library is empty.")
-    except (FileNotFoundError, json.JSONDecodeError) as e:
+    library = load_library_from_analytics()
+    if not library:
         logging.error(
-            f"Fatal Error with '{LIBRARY_FILE}': {e}. Please run library_manager.py."
+            "Fatal Error: no analyzed tracks found. Please run library_manager.py to generate analytics."
         )
         player_state["is_playing"] = False
         return
@@ -536,24 +568,22 @@ def initialize_player():
     """
     Loads the library and determines initial audio parameters without starting playback.
     """
-    try:
-        with open(LIBRARY_FILE, "r") as f:
-            library = json.load(f)
-        if not library:
-            raise FileNotFoundError("Library is empty.")
+    library = load_library_from_analytics()
+    if not library:
+        logging.error(
+            "No analyzed tracks available. Please run library_manager.py before starting the player."
+        )
+        return False
 
-        # Get audio info from the first track to set samplerate/channels
+    player_state["total_tracks_in_library"] = len(library)
+
+    try:
         info = AudioSegment.from_file(library[0]["path"])
         player_state.update({"samplerate": info.frame_rate, "channels": info.channels})
         logging.info(
             f"Player initialized. Samplerate: {info.frame_rate}Hz, Channels: {info.channels}"
         )
         return True
-
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.error(
-            f"Error with '{LIBRARY_FILE}': {e}. Please run library_manager.py."
-        )
     except Exception as e:
         logging.error(f"Error reading first library track for setup: {e}")
 

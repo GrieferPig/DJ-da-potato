@@ -25,6 +25,8 @@ pip3 install -r requirements.txt
 python3 library_manager.py
 ```
 
+Subsequent analyzes will skip the ones that are already analyzed. Neat™, huh?
+
 Then launch the server using
 
 ```bash
@@ -35,6 +37,6 @@ python3 app.py
 
 What do you expect from a vibe-coded weekend project?
 
-<sub>* May not work on all songs, including: orchestral, experimental electronic, the one you just made in FL Studio in under 30 minutes and gave up</sub>
+*Note: May not work on all songs, including orchestral, experimental electronic, or the one you just made in FL Studio in under 30 minutes and gave up.
 
-<sub>** "Smart" is for marketing only; vary by person</sub>
+*Disclaimer: "Smart" is for marketing only; actual results may vary.

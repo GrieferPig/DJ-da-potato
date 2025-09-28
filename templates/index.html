@@ -133,6 +133,28 @@
             color: #ffffff;
         }
 
+        .meta-link {
+            color: #8fc4ff;
+            text-decoration: underline;
+            text-decoration-color: rgba(143, 196, 255, 0.75);
+            text-decoration-thickness: 1.5px;
+            text-underline-offset: 0.18em;
+            transition: color 0.2s ease, text-decoration-color 0.2s ease;
+        }
+
+        .meta-link:hover,
+        .meta-link:focus-visible {
+            color: #b0e4ff;
+            text-decoration-color: rgba(176, 228, 255, 0.9);
+            outline: none;
+        }
+
+        .meta-link.is-disabled {
+            pointer-events: none;
+            color: rgba(255, 255, 255, 0.45);
+            text-decoration: none;
+        }
+
         .track-counter {
             font-size: 0.95em;
             color: rgba(255, 255, 255, 0.65);
@@ -140,12 +162,25 @@
             letter-spacing: 0.08em;
         }
 
+        .track-counter p {
+            margin: 0;
+        }
+
+        #uptime {
+            margin-top: 0.4em;
+            font-size: 0.82em;
+            letter-spacing: 0.05em;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
         .controls {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 1rem;
+            gap: 1.25rem;
             margin-top: 2.4em;
+            width: 100%;
         }
 
         .play-toggle {
@@ -160,6 +195,8 @@
             cursor: pointer;
             box-shadow: 0 12px 24px rgba(29, 185, 84, 0.28);
             transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.3s ease;
+            width: 100%;
+            max-width: 320px;
         }
 
         .play-toggle:hover {
@@ -185,6 +222,11 @@
             text-transform: uppercase;
             border: 1px solid rgba(255, 255, 255, 0.18);
             background: rgba(255, 255, 255, 0.08);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 320px;
         }
 
         .status-pill.online {
@@ -206,6 +248,76 @@
             letter-spacing: 0.05em;
         }
 
+        .volume-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75em;
+            padding: 0.55em 1em;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+            width: 100%;
+            max-width: 320px;
+        }
+
+        .volume-icon {
+            font-size: 1.1em;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 150px;
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #3df7a4, #1db954);
+            outline: none;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid #1db954;
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.35);
+            transition: transform 0.15s ease;
+            margin-top: -6px;
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid #1db954;
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.35);
+            transition: transform 0.15s ease;
+            margin-top: -6px;
+        }
+
+        .volume-slider::-webkit-slider-thumb:hover,
+        .volume-slider::-moz-range-thumb:hover {
+            transform: scale(1.05);
+        }
+
+        .volume-slider::-webkit-slider-runnable-track {
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #3df7a4, #1db954);
+        }
+
+        .volume-slider::-moz-range-track {
+            height: 4px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #3df7a4, #1db954);
+        }
+
         @media (max-width: 640px) {
             body {
                 padding: 2rem 1rem;
@@ -221,6 +333,15 @@
             }
 
             .play-toggle {
+                width: 100%;
+            }
+
+            .volume-control {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .volume-slider {
                 width: 100%;
             }
         }
@@ -245,7 +366,10 @@
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Album</span>
-                    <span class="meta-value" id="current-album">Unknown Album</span>
+                    <span class="meta-value">
+                        <a id="current-album" class="meta-link is-disabled" href="#" target="_blank"
+                            rel="noopener">Unknown Album</a>
+                    </span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Artist</span>
@@ -263,7 +387,10 @@
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Album</span>
-                    <span class="meta-value" id="next-album">Unknown Album</span>
+                    <span class="meta-value">
+                        <a id="next-album" class="meta-link is-disabled" href="#" target="_blank" rel="noopener">Unknown
+                            Album</a>
+                    </span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Artist</span>
@@ -272,11 +399,17 @@
             </div>
         </div>
         <div class="track-counter">
-            <p id="track-count">Track: 0 / 0</p>
+            <p id="track-count">Tracks played: 0</p>
+            <p id="uptime">Uptime: 0s</p>
         </div>
         <div class="controls">
             <button class="play-toggle" id="play-toggle">Start stream</button>
             <span class="status-pill offline" id="connection-status">Offline</span>
+            <div class="volume-control">
+                <span class="volume-icon" aria-hidden="true">&#128266;</span>
+                <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="100"
+                    aria-label="Volume">
+            </div>
         </div>
         <p class="play-hint" id="play-hint">Click “Start stream” to enable audio playback.</p>
     </div>
@@ -295,6 +428,117 @@
         const nextNumberEl = document.getElementById('next-track-number');
         const nextAlbumEl = document.getElementById('next-album');
         const nextArtistEl = document.getElementById('next-artist');
+        const volumeSlider = document.getElementById('volume-slider');
+        const uptimeEl = document.getElementById('uptime');
+
+        let userVolume = volumeSlider ? Number(volumeSlider.value) / 100 : 1;
+        let isMuted = true;
+        let serverStartedAtMs = null;
+        let lastServerUptimeSeconds = null;
+        let lastSyncTimestampMs = null;
+        let uptimeTimerId = null;
+
+        function parseServerTimestamp(value) {
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return value * 1000;
+            }
+
+            if (typeof value === 'string' && value.trim()) {
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) {
+                    return numeric * 1000;
+                }
+
+                const parsed = Date.parse(value);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+
+            return null;
+        }
+
+        function formatDuration(totalSeconds) {
+            const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+            const secondsInMinute = 60;
+            const secondsInHour = secondsInMinute * 60;
+            const secondsInDay = secondsInHour * 24;
+            const secondsInWeek = secondsInDay * 7;
+
+            const weeks = Math.floor(safeSeconds / secondsInWeek);
+            let remainder = safeSeconds % secondsInWeek;
+
+            const days = Math.floor(remainder / secondsInDay);
+            remainder %= secondsInDay;
+
+            const hours = Math.floor(remainder / secondsInHour);
+            remainder %= secondsInHour;
+
+            const minutes = Math.floor(remainder / secondsInMinute);
+            const seconds = remainder % secondsInMinute;
+
+            return [
+                `${weeks}w`,
+                `${days}d`,
+                `${String(hours).padStart(2, '0')}h`,
+                `${String(minutes).padStart(2, '0')}m`,
+                `${String(seconds).padStart(2, '0')}s`
+            ].join(' ');
+        }
+
+        function computeElapsedSeconds() {
+            if (serverStartedAtMs !== null) {
+                return Math.max(0, Math.floor((Date.now() - serverStartedAtMs) / 1000));
+            }
+
+            if (lastServerUptimeSeconds !== null && lastSyncTimestampMs !== null) {
+                const delta = Math.floor((Date.now() - lastSyncTimestampMs) / 1000);
+                return Math.max(0, lastServerUptimeSeconds + delta);
+            }
+
+            return 0;
+        }
+
+        function renderUptime() {
+            if (!uptimeEl) {
+                return;
+            }
+
+            const elapsedSeconds = computeElapsedSeconds();
+            uptimeEl.textContent = `Uptime: ${formatDuration(elapsedSeconds)}`;
+        }
+
+        function ensureUptimeTimer() {
+            if (uptimeTimerId !== null) {
+                return;
+            }
+
+            uptimeTimerId = window.setInterval(renderUptime, 1000);
+        }
+
+        function syncUptime(state) {
+            if (!state || !uptimeEl) {
+                return;
+            }
+
+            const parsedStart = parseServerTimestamp(state.server_started_at);
+            if (parsedStart !== null) {
+                serverStartedAtMs = parsedStart;
+            }
+
+            if (
+                typeof state.uptime_seconds === 'number'
+                && Number.isFinite(state.uptime_seconds)
+            ) {
+                lastServerUptimeSeconds = Math.max(0, Math.floor(state.uptime_seconds));
+                lastSyncTimestampMs = Date.now();
+            }
+
+            ensureUptimeTimer();
+            renderUptime();
+        }
+
+        renderUptime();
 
         const coverState = {
             currentCoverVersion: 0,
@@ -341,6 +585,26 @@
                 coverState.inactiveLayerId,
                 coverState.activeLayerId
             ];
+        }
+
+        function updateVolumeSliderVisual(value) {
+            if (!volumeSlider) {
+                return;
+            }
+            const percentage = Math.max(0, Math.min(100, Number(value)));
+            volumeSlider.style.background = `linear-gradient(90deg, #3df7a4 ${percentage}%, rgba(255, 255, 255, 0.15) ${percentage}%)`;
+        }
+
+        function applyVolume() {
+            if (!playback.gainNode) {
+                return;
+            }
+            const target = isMuted ? 0 : userVolume;
+            if (playback.audioCtx) {
+                playback.gainNode.gain.setValueAtTime(target, playback.audioCtx.currentTime);
+            } else {
+                playback.gainNode.gain.value = target;
+            }
         }
 
         async function loadCover(version) {
@@ -401,6 +665,24 @@
             coverState.pendingVersion = -1;
         }
 
+        function updateAlbumLink(element, albumName) {
+            if (!element) {
+                return;
+            }
+
+            const isValidName = typeof albumName === 'string' && albumName.trim() && albumName.trim().toLowerCase() !== 'unknown album';
+            const displayName = isValidName ? albumName.trim() : 'Unknown Album';
+
+            element.textContent = displayName;
+            if (isValidName) {
+                element.href = `https://example.com/albums/${encodeURIComponent(displayName)}`;
+                element.classList.remove('is-disabled');
+            } else {
+                element.href = '#';
+                element.classList.add('is-disabled');
+            }
+        }
+
         function applyTrackState(state) {
             if (!state) {
                 return;
@@ -409,18 +691,19 @@
             const currentTitle = state.current_track_title || state.current_song || 'Unknown Title';
             currentSongEl.textContent = currentTitle;
             currentNumberEl.textContent = state.current_track_number || '--';
-            currentAlbumEl.textContent = state.current_album || 'Unknown Album';
+            updateAlbumLink(currentAlbumEl, state.current_album);
             currentArtistEl.textContent = state.current_artist || 'Unknown Artist';
 
             const nextTitle = state.next_track_title || state.next_song || 'Finding next track...';
             nextSongEl.textContent = nextTitle;
             nextNumberEl.textContent = state.next_track_number || '--';
-            nextAlbumEl.textContent = state.next_album || 'Unknown Album';
+            updateAlbumLink(nextAlbumEl, state.next_album);
             nextArtistEl.textContent = state.next_artist || 'Unknown Artist';
 
             const played = Number.isFinite(state.track_count) ? state.track_count : 0;
-            const total = Number.isFinite(state.total_tracks) ? state.total_tracks : 0;
-            trackCountEl.textContent = `Track: ${played} / ${total}`;
+            trackCountEl.textContent = `Tracks played: ${played}`;
+
+            syncUptime(state);
 
             if (typeof state.current_cover_version === 'number') {
                 const version = state.current_cover_version;
@@ -459,12 +742,13 @@
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
             const audioCtx = new AudioCtx();
             const gainNode = audioCtx.createGain();
-            gainNode.gain.value = 0;
             gainNode.connect(audioCtx.destination);
 
             playback.audioCtx = audioCtx;
             playback.gainNode = gainNode;
             resetPlaybackTiming();
+
+            applyVolume();
 
             await audioCtx.resume();
             return audioCtx;
@@ -570,27 +854,63 @@
             }
         }
 
-        let isMuted = true;
-
         playButton.addEventListener('click', async () => {
             await ensureAudioContext();
 
             if (!playback.started) {
                 playback.started = true;
+                if (userVolume === 0) {
+                    userVolume = 1;
+                    if (volumeSlider) {
+                        volumeSlider.value = 100;
+                        updateVolumeSliderVisual(100);
+                    }
+                }
                 isMuted = false;
                 if (playHint) {
                     playHint.textContent = 'Streaming…';
                 }
-                playback.gainNode.gain.setValueAtTime(1, playback.audioCtx.currentTime);
                 playButton.textContent = 'Mute stream';
+                applyVolume();
                 drainQueue();
             } else {
                 isMuted = !isMuted;
-                const nextValue = isMuted ? 0 : 1;
-                playback.gainNode.gain.setValueAtTime(nextValue, playback.audioCtx.currentTime);
+                if (!isMuted && userVolume === 0) {
+                    userVolume = 0.6;
+                    if (volumeSlider) {
+                        const restoredValue = 60;
+                        volumeSlider.value = restoredValue;
+                        updateVolumeSliderVisual(restoredValue);
+                    }
+                }
                 playButton.textContent = isMuted ? 'Unmute stream' : 'Mute stream';
+                applyVolume();
             }
         });
+
+        if (volumeSlider) {
+            updateVolumeSliderVisual(volumeSlider.value);
+            volumeSlider.addEventListener('input', (event) => {
+                const rawValue = Number(event.target.value);
+                const clampedValue = Math.max(0, Math.min(100, rawValue));
+                userVolume = clampedValue / 100;
+                updateVolumeSliderVisual(clampedValue);
+
+                if (!playback.started) {
+                    return;
+                }
+
+                if (userVolume === 0) {
+                    isMuted = true;
+                    playButton.textContent = 'Unmute stream';
+                } else if (isMuted) {
+                    isMuted = false;
+                    playButton.textContent = 'Mute stream';
+                }
+
+                applyVolume();
+            });
+        }
 
         const socket = io({
             transports: ['websocket'],
@@ -649,6 +969,8 @@
         socket.on('track_state', (state) => {
             applyTrackState(state);
         });
+
+        // Uptime is kept in sync via syncUptime when track_state events arrive.
 
         setConnectionState('Connecting…', false);
     </script>
