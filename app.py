@@ -340,7 +340,6 @@ def favicon():
         app.static_folder,
         "favicon.ico",
         mimetype="image/vnd.microsoft.icon",
-        cache_timeout=0,
     )
 
 
