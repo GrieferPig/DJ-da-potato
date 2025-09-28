@@ -13,3 +13,4 @@ music/
 pyvenv.cfg
 share/
 analytics/
+*.tar

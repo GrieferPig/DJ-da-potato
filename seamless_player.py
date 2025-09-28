@@ -90,10 +90,10 @@ def calculate_key_compatibility(key1, key2):
     if distance == 0:
         return 100
     if distance == 1:
-        return 75
+        return 60
     if distance == 2:
-        return 50
-    return 25
+        return 30
+    return 0
 
 
 def load_library_from_analytics(directory=ANALYTICS_DIRECTORY):
@@ -129,6 +129,13 @@ def load_library_from_analytics(directory=ANALYTICS_DIRECTORY):
                 f"Could not load analytics file '{os.path.basename(file_path)}': {exc}"
             )
 
+    # Sanitize path fields (win -> posix)
+    for track in tracks:
+        track["path"] = track["path"].replace("\\", "/")
+        # make it absolute if it's not already
+        if not os.path.isabs(track["path"]):
+            track["path"] = os.path.abspath(track["path"])
+
     return tracks
 
 
@@ -147,7 +154,7 @@ def find_best_next_track(current_track, available_tracks):
         bpm_score = max(0, 100 - (bpm_diff * 5))  # Score based on BPM proximity
 
         # Weighted score
-        total_score = (key_score * 0.6) + (bpm_score * 0.4)
+        total_score = (key_score * 0.65) + (bpm_score * 0.35)
 
         if total_score > highest_score:
             highest_score, best_candidate = total_score, candidate
