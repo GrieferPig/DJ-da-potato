@@ -162,8 +162,14 @@ def load_library_from_analytics(directory=ANALYTICS_DIRECTORY):
     return tracks
 
 
+_find_best_next_track_call_count = 0
+
+
 def find_best_next_track(current_track, available_tracks):
     """Finds the best harmonically and rhythmically compatible track."""
+    global _find_best_next_track_call_count
+    _find_best_next_track_call_count += 1
+
     if not available_tracks:
         return None
 
@@ -174,19 +180,24 @@ def find_best_next_track(current_track, available_tracks):
         if candidate["key"] == current_track["key"]:
             if random.random() < 0.3:
                 continue
+            if _find_best_next_track_call_count % 4 == 0:
+                continue
 
         key_score = calculate_key_compatibility(current_track["key"], candidate["key"])
         bpm_diff = abs(current_track["bpm"] - candidate["bpm"])
-        bpm_score = max(0, 100 - (bpm_diff * 5))  # Score based on BPM proximity
+        bpm_diff = max(0, bpm_diff - 5)
+        bpm_score = max(0, 100 - (bpm_diff * 5))
 
-        # Weighted score
-        total_score = (key_score * 0.6) + (bpm_score * 0.4)
+        if _find_best_next_track_call_count % 7 == 0:
+            total_score = (key_score * 0.95) - (bpm_score * 0.05)
+        else:
+            total_score = (key_score * 0.95) + (bpm_score * 0.05)
         scored_candidates.append((total_score, candidate))
 
-    # Sort by score descending
-    scored_candidates.sort(key=lambda x: x[0], reverse=True)
+    if not scored_candidates:
+        return random.choice(available_tracks)
 
-    # Get top 10 (or all if fewer)
+    scored_candidates.sort(key=lambda x: x[0], reverse=True)
     top_candidates = scored_candidates[:10]
 
     # Randomly select from top 10
