@@ -9,9 +9,20 @@ import queue
 import numpy as np
 
 try:
-    from eventlet.queue import Empty as EventletQueueEmpty
+    import lameenc
+except ImportError:  # pragma: no cover - MP3 streaming optional without encoder
+    lameenc = None
+
+try:
+    from eventlet.queue import (  # type: ignore[import]
+        Empty as EventletQueueEmpty,
+        Full as EventletQueueFull,
+        LightQueue as EventletQueue,
+    )
 except ImportError:  # pragma: no cover - eventlet optional
     EventletQueueEmpty = None
+    EventletQueueFull = None
+    EventletQueue = None
 
 
 app = Flask(__name__)
@@ -40,6 +51,173 @@ forwarder_started = False
 QUEUE_EMPTY_EXCEPTIONS = (
     (queue.Empty,) if EventletQueueEmpty is None else (queue.Empty, EventletQueueEmpty)
 )
+QUEUE_FULL_EXCEPTIONS = (
+    (queue.Full,) if EventletQueueFull is None else (queue.Full, EventletQueueFull)
+)
+
+MP3_CLIENT_QUEUE_SIZE = 256
+mp3_stream_clients = set()
+mp3_clients_lock = threading.Lock()
+
+
+def _create_mp3_client_queue(maxsize: int) -> queue.Queue:
+    if EventletQueue is not None:
+        return EventletQueue(maxsize)
+    return queue.Queue(maxsize=maxsize)
+
+
+def _cooperative_sleep(seconds: float) -> None:
+    if seconds <= 0:
+        return
+    try:
+        socketio.sleep(seconds)
+    except RuntimeError:
+        time.sleep(seconds)
+
+
+def _enqueue_mp3_message(target_queue: queue.Queue, message: dict) -> bool:
+    try:
+        target_queue.put_nowait(message)
+        return True
+    except QUEUE_FULL_EXCEPTIONS:
+        try:
+            target_queue.get_nowait()
+        except QUEUE_EMPTY_EXCEPTIONS:
+            pass
+        try:
+            target_queue.put_nowait(message)
+            return True
+        except QUEUE_FULL_EXCEPTIONS:
+            return False
+    except Exception:
+        return False
+
+
+def register_mp3_stream_client() -> queue.Queue:
+    client_queue: queue.Queue = _create_mp3_client_queue(MP3_CLIENT_QUEUE_SIZE)
+    with mp3_clients_lock:
+        mp3_stream_clients.add(client_queue)
+
+    snapshot = get_audio_config_snapshot()
+    if snapshot:
+        _enqueue_mp3_message(client_queue, {"type": "config", "data": snapshot})
+
+    with history_lock:
+        history_snapshot = list(audio_history)
+
+    for payload in history_snapshot:
+        _enqueue_mp3_message(client_queue, {"type": "chunk", "data": payload})
+
+    return client_queue
+
+
+def unregister_mp3_stream_client(client_queue: queue.Queue) -> None:
+    with mp3_clients_lock:
+        mp3_stream_clients.discard(client_queue)
+
+    try:
+        while True:
+            client_queue.get_nowait()
+    except QUEUE_EMPTY_EXCEPTIONS:
+        pass
+
+
+def broadcast_to_mp3_clients(message: dict) -> None:
+    if not mp3_stream_clients:
+        return
+
+    with mp3_clients_lock:
+        clients_snapshot = list(mp3_stream_clients)
+
+    if not clients_snapshot:
+        return
+
+    stale_clients = []
+    for client_queue in clients_snapshot:
+        if not _enqueue_mp3_message(client_queue, message):
+            stale_clients.append(client_queue)
+
+    if stale_clients:
+        with mp3_clients_lock:
+            for client_queue in stale_clients:
+                mp3_stream_clients.discard(client_queue)
+
+
+def create_mp3_encoder(config: dict | None):
+    if lameenc is None:
+        return None
+
+    config = config or {}
+    sample_rate = int(config.get("sampleRate") or 44100)
+    channels = int(config.get("channels") or 2)
+
+    encoder = lameenc.Encoder()
+    encoder.set_in_sample_rate(sample_rate)
+    encoder.set_bit_rate(192)
+    encoder.set_channels(max(1, min(channels, 2)))
+    encoder.set_quality(2)
+    return encoder
+
+
+def mp3_stream_generator():
+    client_queue = register_mp3_stream_client()
+    encoder = create_mp3_encoder(get_audio_config_snapshot())
+    encoded_since_config = False
+
+    try:
+        while True:
+            try:
+                message = client_queue.get_nowait()
+            except QUEUE_EMPTY_EXCEPTIONS:
+                _cooperative_sleep(0.01)
+                continue
+
+            if not message:
+                continue
+
+            msg_type = message.get("type")
+
+            if msg_type == "config":
+                if encoder and encoded_since_config:
+                    try:
+                        final_bytes = encoder.flush()
+                    except Exception:
+                        final_bytes = b""
+                    if final_bytes:
+                        yield final_bytes
+                encoder = create_mp3_encoder(message.get("data"))
+                encoded_since_config = False
+
+            elif msg_type == "chunk":
+                if not encoder:
+                    continue
+
+                chunk_payload = message.get("data") or {}
+                chunk_bytes = chunk_payload.get("chunk")
+                if not chunk_bytes:
+                    continue
+
+                try:
+                    mp3_bytes = encoder.encode(chunk_bytes)
+                except Exception:
+                    mp3_bytes = b""
+
+                if mp3_bytes:
+                    yield mp3_bytes
+                    encoded_since_config = True
+
+            elif msg_type == "stop":
+                if encoder:
+                    try:
+                        final_bytes = encoder.flush()
+                    except Exception:
+                        final_bytes = b""
+                    if final_bytes:
+                        yield final_bytes
+                break
+
+    finally:
+        unregister_mp3_stream_client(client_queue)
 
 
 def set_audio_config(sample_rate: int, channels: int, block_size: int) -> None:
@@ -262,12 +440,15 @@ def audio_forwarder():
         data = message.get("data")
 
         if msg_type == "config" and data:
+            broadcast_to_mp3_clients(message)
             socketio.emit("audio_config", data)
         elif msg_type == "chunk" and data:
             with history_lock:
                 audio_history.append(data)
+            broadcast_to_mp3_clients(message)
             socketio.emit("audio_chunk", data)
         elif msg_type == "stop":
+            broadcast_to_mp3_clients(message)
             with forwarder_lock:
                 forwarder_started = False
             break
@@ -341,6 +522,20 @@ def favicon():
         "favicon.ico",
         mimetype="image/vnd.microsoft.icon",
     )
+
+
+@app.route("/mp3")
+def stream_mp3():
+    if lameenc is None:
+        abort(
+            503, description="MP3 streaming unavailable: lameenc encoder not installed."
+        )
+
+    response = Response(mp3_stream_generator(), mimetype="audio/mpeg")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Connection"] = "keep-alive"
+    response.direct_passthrough = True
+    return response
 
 
 @app.route("/status")
