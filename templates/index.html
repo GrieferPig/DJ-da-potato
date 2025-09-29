@@ -754,7 +754,8 @@
 
             element.textContent = displayName;
             if (isValid) {
-                element.href = `https://poniesatdawn.bandcamp.com/album/${encodeURIComponent(displayName)}`;
+                const sanitized = displayName.toLowerCase().replace(/ /g, '-');
+                element.href = `https://poniesatdawn.bandcamp.com/album/${encodeURIComponent(sanitized)}`;
                 element.classList.remove('is-disabled');
             } else {
                 element.href = '#';
