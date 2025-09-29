@@ -77,9 +77,32 @@ CIRCLE_OF_FIFTHS = {
     "D Minor": 12,
 }
 
+_CANONICAL_KEY_MAP = {key.lower(): key for key in CIRCLE_OF_FIFTHS}
+
+
+def normalize_key_label(key_str):
+    if not isinstance(key_str, str):
+        return None
+
+    cleaned = key_str.strip()
+    if not cleaned:
+        return None
+
+    canonical = _CANONICAL_KEY_MAP.get(cleaned.lower())
+    if canonical:
+        return canonical
+
+    # Fallback to title-casing (handles values like "c# minor") before checking again.
+    title_cased = cleaned.title()
+    return _CANONICAL_KEY_MAP.get(title_cased.lower())
+
 
 def get_key_number(key_str):
-    return CIRCLE_OF_FIFTHS.get(key_str, 0)
+    canonical = normalize_key_label(key_str)
+    if not canonical:
+        return 0
+
+    return CIRCLE_OF_FIFTHS.get(canonical, 0)
 
 
 def calculate_key_compatibility(key1, key2):
