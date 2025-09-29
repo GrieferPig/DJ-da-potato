@@ -824,13 +824,19 @@
             audioConfig: null,
             chunkQueue: [],
             maxQueue: 512,
-            lastSeq: null
+            lastSeq: null,
+            prebufferSeconds: 0.35,
+            minLeadSeconds: 0.12,
+            resyncLeadSeconds: 0.45
         };
 
         function resetPlaybackTiming() {
             playback.lastSeq = null;
             if (playback.audioCtx) {
-                playback.nextStartTime = playback.audioCtx.currentTime + 0.05;
+                const lead = typeof playback.prebufferSeconds === 'number'
+                    ? playback.prebufferSeconds
+                    : 0.05;
+                playback.nextStartTime = playback.audioCtx.currentTime + lead;
             } else {
                 playback.nextStartTime = 0;
             }
@@ -988,13 +994,23 @@
             source.connect(playback.gainNode);
 
             const now = audioCtx.currentTime;
-            if (!playback.nextStartTime || playback.nextStartTime < now) {
-                playback.nextStartTime = now + 0.02;
+            const minLead = typeof playback.minLeadSeconds === 'number'
+                ? playback.minLeadSeconds
+                : 0.05;
+            const targetLead = typeof playback.prebufferSeconds === 'number'
+                ? playback.prebufferSeconds
+                : 0.05;
+            if (!playback.nextStartTime || playback.nextStartTime < now + minLead) {
+                playback.nextStartTime = now + targetLead;
             }
 
             if (typeof payload.seq === 'number') {
                 if (playback.lastSeq !== null && payload.seq !== playback.lastSeq + 1) {
-                    playback.nextStartTime = now + 0.05;
+                    const resyncLead = typeof playback.resyncLeadSeconds === 'number'
+                        ? playback.resyncLeadSeconds
+                        : targetLead;
+                    const desiredStart = now + resyncLead;
+                    playback.nextStartTime = Math.max(playback.nextStartTime, desiredStart);
                 }
                 playback.lastSeq = payload.seq;
             }
