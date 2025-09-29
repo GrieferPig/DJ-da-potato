@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Media Session API with Live Stream</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+    <style>
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Web Media Session API with Live Stream 📻</h1>
+        <p>
+            Click the play button to start the live audio stream from <code>http://127.0.0.1:5000</code>.
+            Once playing, you can use your system's media controls to play and pause. The track metadata will update
+            automatically as the stream progresses.
+        </p>
+        <button id="playButton">Play Live Stream</button>
+        <h2>Event Log</h2>
+        <pre id="log"></pre>
+        <audio id="dummyAudio" src="static/dummy.mp3" loop></audio>
+    </div>
+
+    <script>
+        // --- UI Setup ---
+        const playButton = document.getElementById('playButton');
+        const logElement = document.getElementById('log');
+
+        function log(message) {
+            console.log(message);
+            logElement.textContent += message + '\n';
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        // --- FIX: Create a silent audio element to satisfy browser autoplay policies ---
+        const silentAudio = document.getElementById('dummyAudio');
+
+
+        // --- Live Stream Playback Engine (from index.html) ---
+        const playback = {
+            audioCtx: null,
+            gainNode: null,
+            nextStartTime: 0,
+            started: false,
+            isMuted: true,
+            userVolume: 1.0,
+            audioConfig: null,
+            chunkQueue: [],
+            maxQueue: 512,
+            lastSeq: null
+        };
+
+        async function ensureAudioContext() {
+            if (playback.audioCtx) {
+                if (playback.audioCtx.state === 'suspended') await playback.audioCtx.resume();
+                return playback.audioCtx;
+            }
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioContext();
+            const gainNode = audioCtx.createGain();
+            gainNode.connect(audioCtx.destination);
+            playback.audioCtx = audioCtx;
+            playback.gainNode = gainNode;
+            resetPlaybackTiming();
+            applyVolume();
+            await audioCtx.resume();
+            return audioCtx;
+        }
+
+        function resetPlaybackTiming() {
+            playback.lastSeq = null;
+            if (playback.audioCtx) playback.nextStartTime = playback.audioCtx.currentTime + 0.05;
+        }
+
+        function applyVolume() {
+            if (!playback.gainNode) return;
+            const targetVolume = playback.isMuted ? 0 : playback.userVolume;
+            playback.gainNode.gain.setValueAtTime(targetVolume, playback.audioCtx ? playback.audioCtx.currentTime : 0);
+        }
+
+        function getChunkBytes(chunk) {
+            if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk);
+            if (ArrayBuffer.isView(chunk)) return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            return null;
+        }
+
+        function schedulePayload(payload) {
+            const { audioCtx, audioConfig } = playback;
+            if (!audioCtx || !audioConfig || !payload?.chunk) return;
+            const bytes = getChunkBytes(payload.chunk);
+            if (!bytes || bytes.byteLength === 0 || bytes.byteLength % 2 !== 0) return;
+            const { channels, sampleRate } = audioConfig;
+            const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+            const frameCount = Math.floor(int16.length / channels);
+            if (!frameCount) return;
+            const audioBuffer = audioCtx.createBuffer(channels, frameCount, sampleRate);
+            for (let ch = 0; ch < channels; ch++) {
+                const channelData = audioBuffer.getChannelData(ch);
+                for (let frame = 0; frame < frameCount; frame++) {
+                    channelData[frame] = int16[frame * channels + ch] / 32768;
+                }
+            }
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(playback.gainNode);
+            const now = audioCtx.currentTime;
+            if (!playback.nextStartTime || playback.nextStartTime < now) playback.nextStartTime = now + 0.02;
+            if (typeof payload.seq === 'number') {
+                if (playback.lastSeq !== null && payload.seq !== playback.lastSeq + 1) playback.nextStartTime = now + 0.05;
+                playback.lastSeq = payload.seq;
+            }
+            source.start(playback.nextStartTime);
+            playback.nextStartTime += audioBuffer.duration;
+        }
+
+        function drainQueue() {
+            if (!playback.started || !playback.audioCtx || !playback.audioConfig) return;
+            while (playback.chunkQueue.length > 0) {
+                schedulePayload(playback.chunkQueue.shift());
+            }
+        }
+
+        // --- Media Session and Socket.IO Integration ---
+        if (!('mediaSession' in navigator)) {
+            log("The Media Session API is not supported. Controls will not work.");
+        }
+
+        playButton.addEventListener('click', async () => {
+            log('Play button clicked.');
+            await ensureAudioContext();
+            if (!playback.started) {
+                playback.started = true;
+                playback.isMuted = false;
+                // --- FIX: Play the silent audio on first user interaction ---
+                silentAudio.play().catch(e => log(`Silent audio failed to play: ${e.message}`));
+                playButton.textContent = 'Pause Stream';
+                log('Stream started.');
+            } else {
+                playback.isMuted = !playback.isMuted;
+                // --- FIX: Pause/play the silent audio along with the stream ---
+                if (playback.isMuted) silentAudio.pause();
+                else silentAudio.play().catch(e => log(`Silent audio failed to play: ${e.message}`));
+
+                playButton.textContent = playback.isMuted ? 'Play Stream' : 'Pause Stream';
+                log(`Stream ${playback.isMuted ? 'paused' : 'resumed'}.`);
+            }
+            applyVolume();
+            navigator.mediaSession.playbackState = playback.isMuted ? 'paused' : 'playing';
+            drainQueue();
+        });
+
+        const socket = io({ transports: ['websocket'] });
+        socket.on('connect', () => { log('✅ Connected to live stream server.'); playback.chunkQueue.length = 0; resetPlaybackTiming(); });
+        socket.on('disconnect', () => log('❌ Disconnected from server.'));
+        socket.io.on('reconnect_attempt', () => log('Trying to reconnect...'));
+
+        socket.on('track_state', (state) => {
+            if (!state) return;
+            const title = state.current_track_title || 'Unknown Title';
+            const artist = state.current_artist || 'Unknown Artist';
+            const album = state.current_album || 'P@D Web Radio';
+            log(`🎶 Now Playing: "${title}" by ${artist}`);
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title, artist, album,
+                artwork: [{ src: 'https://via.placeholder.com/512.png?text=Live+Stream', sizes: '512x512', type: 'image/png' }]
+            });
+        });
+
+        socket.on('audio_config', (config) => { playback.audioConfig = config; log(`🔊 Audio config: ${config.sampleRate} Hz, ${config.channels} ch.`); resetPlaybackTiming(); drainQueue(); });
+        socket.on('audio_chunk', async (payload) => {
+            if (!payload?.chunk) return;
+            let chunkData = payload.chunk;
+            if (typeof Blob !== 'undefined' && chunkData instanceof Blob) chunkData = await chunkData.arrayBuffer();
+            playback.chunkQueue.push({ chunk: chunkData, seq: payload.seq });
+            if (playback.chunkQueue.length > playback.maxQueue) playback.chunkQueue.splice(0, playback.chunkQueue.length - playback.maxQueue);
+            drainQueue();
+        });
+
+        // --- Media Session Action Handlers ---
+        navigator.mediaSession.setActionHandler('play', async () => {
+            log('> User clicked "Play" via media controls.');
+            silentAudio.play().catch(e => log(`Silent audio failed to play: ${e.message}`)); // FIX
+            await ensureAudioContext();
+            playback.isMuted = false;
+            applyVolume();
+            navigator.mediaSession.playbackState = 'playing';
+            playButton.textContent = 'Pause Stream';
+        });
+
+        navigator.mediaSession.setActionHandler('pause', () => {
+            log('> User clicked "Pause" via media controls.');
+            silentAudio.pause(); // FIX
+            playback.isMuted = true;
+            applyVolume();
+            navigator.mediaSession.playbackState = 'paused';
+            playButton.textContent = 'Play Stream';
+        });
+
+        log('Media Session handlers for Play/Pause are ready.');
+    </script>
+</body>
+
+</html>

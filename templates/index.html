@@ -416,6 +416,8 @@
             GrieferPig</p>
     </div>
 
+    <audio id="dummy-audio" src="static/dummy.mp3" preload="auto" loop hidden aria-hidden="true"></audio>
+
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
     <script>
         const currentSongEl = document.getElementById('current-song');
@@ -432,6 +434,20 @@
         const nextArtistEl = document.getElementById('next-artist');
         const volumeSlider = document.getElementById('volume-slider');
         const uptimeEl = document.getElementById('uptime');
+        const silentAudio = document.getElementById('dummy-audio');
+
+        const mediaSessionState = {
+            supported: 'mediaSession' in navigator,
+            metadata: {
+                title: 'Loading…',
+                artist: 'Unknown Artist',
+                album: 'P@D Web Radio',
+                artworkUrl: null,
+                artworkType: 'image/png'
+            }
+        };
+
+        const mediaSessionFallbackArtwork = 'https://via.placeholder.com/512.png?text=P%40D+Radio';
 
         let userVolume = volumeSlider ? Number(volumeSlider.value) / 100 : 1;
         let isMuted = true;
@@ -508,6 +524,47 @@
 
             const elapsedSeconds = computeElapsedSeconds();
             uptimeEl.textContent = `Serving P@D bangers for: ${formatDuration(elapsedSeconds)}`;
+        }
+
+        function refreshMediaSessionMetadata() {
+            if (!mediaSessionState.supported) {
+                return;
+            }
+
+            if (typeof window === 'undefined' || typeof window.MediaMetadata !== 'function') {
+                return;
+            }
+
+            const { title, artist, album, artworkUrl, artworkType } = mediaSessionState.metadata;
+            const artworkEntries = artworkUrl
+                ? [{ src: artworkUrl, sizes: '512x512', type: artworkType || 'image/png' }]
+                : [{ src: mediaSessionFallbackArtwork, sizes: '512x512', type: 'image/png' }];
+
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title || 'Unknown Title',
+                artist: artist || 'Unknown Artist',
+                album: album || 'P@D Web Radio',
+                artwork: artworkEntries
+            });
+        }
+
+        function setMediaSessionArtwork(url, type = 'image/png') {
+            if (!mediaSessionState.supported) {
+                return;
+            }
+
+            mediaSessionState.metadata.artworkUrl = url || null;
+            mediaSessionState.metadata.artworkType = type || 'image/png';
+            refreshMediaSessionMetadata();
+        }
+
+        function updateMediaSessionPlaybackState() {
+            if (!mediaSessionState.supported) {
+                return;
+            }
+
+            const state = (!isMuted && playback.started) ? 'playing' : 'paused';
+            navigator.mediaSession.playbackState = state;
         }
 
         function ensureUptimeTimer() {
@@ -598,15 +655,15 @@
         }
 
         function applyVolume() {
-            if (!playback.gainNode) {
-                return;
+            if (playback.gainNode) {
+                const target = isMuted ? 0 : userVolume;
+                if (playback.audioCtx) {
+                    playback.gainNode.gain.setValueAtTime(target, playback.audioCtx.currentTime);
+                } else {
+                    playback.gainNode.gain.value = target;
+                }
             }
-            const target = isMuted ? 0 : userVolume;
-            if (playback.audioCtx) {
-                playback.gainNode.gain.setValueAtTime(target, playback.audioCtx.currentTime);
-            } else {
-                playback.gainNode.gain.value = target;
-            }
+            updateMediaSessionPlaybackState();
         }
 
         async function loadCover(version) {
@@ -616,6 +673,7 @@
 
             let url = null;
             let blobUrl = null;
+            let blobContentType = 'image/png';
 
             if (version > 0) {
                 try {
@@ -628,6 +686,7 @@
                     }
 
                     if (response.ok && response.status !== 204) {
+                        blobContentType = response.headers.get('Content-Type') || 'image/png';
                         const blob = await response.blob();
                         if (requestMarker !== coverState.requestId) {
                             return;
@@ -665,24 +724,44 @@
             swapBackground(url);
             coverState.currentCoverVersion = version;
             coverState.pendingVersion = -1;
+
+            setMediaSessionArtwork(url, blobContentType);
+        }
+
+        function normalizeAlbumName(albumName) {
+            if (typeof albumName === 'string') {
+                const trimmed = albumName.trim();
+                if (trimmed && trimmed.toLowerCase() !== 'unknown album') {
+                    return {
+                        displayName: trimmed,
+                        isValid: true
+                    };
+                }
+            }
+
+            return {
+                displayName: 'Unknown Album',
+                isValid: false
+            };
         }
 
         function updateAlbumLink(element, albumName) {
             if (!element) {
-                return;
+                return 'Unknown Album';
             }
 
-            const isValidName = typeof albumName === 'string' && albumName.trim() && albumName.trim().toLowerCase() !== 'unknown album';
-            const displayName = isValidName ? albumName.trim() : 'Unknown Album';
+            const { displayName, isValid } = normalizeAlbumName(albumName);
 
             element.textContent = displayName;
-            if (isValidName) {
+            if (isValid) {
                 element.href = `https://poniesatdawn.bandcamp.com/album/${encodeURIComponent(displayName)}`;
                 element.classList.remove('is-disabled');
             } else {
                 element.href = '#';
                 element.classList.add('is-disabled');
             }
+
+            return displayName;
         }
 
         function applyTrackState(state) {
@@ -693,8 +772,9 @@
             const currentTitle = state.current_track_title || state.current_song || 'Unknown Title';
             currentSongEl.textContent = currentTitle;
             currentNumberEl.textContent = state.current_track_number || '--';
-            updateAlbumLink(currentAlbumEl, state.current_album);
-            currentArtistEl.textContent = state.current_artist || 'Unknown Artist';
+            const currentAlbumDisplay = updateAlbumLink(currentAlbumEl, state.current_album);
+            const currentArtist = state.current_artist || 'Unknown Artist';
+            currentArtistEl.textContent = currentArtist;
 
             const nextTitle = state.next_track_title || state.next_song || 'Finding next track...';
             nextSongEl.textContent = nextTitle;
@@ -707,11 +787,28 @@
 
             syncUptime(state);
 
+            if (mediaSessionState.supported) {
+                mediaSessionState.metadata.title = currentTitle;
+                mediaSessionState.metadata.artist = currentArtist;
+
+                const albumForMediaSession = currentAlbumDisplay !== 'Unknown Album'
+                    ? currentAlbumDisplay
+                    : 'P@D Web Radio';
+                mediaSessionState.metadata.album = albumForMediaSession;
+
+                refreshMediaSessionMetadata();
+            }
+
             if (typeof state.current_cover_version === 'number') {
                 const version = state.current_cover_version;
                 if (version !== coverState.currentCoverVersion && version !== coverState.pendingVersion) {
+                    setMediaSessionArtwork(null);
                     loadCover(version);
+                } else if (version <= 0) {
+                    setMediaSessionArtwork(null);
                 }
+            } else {
+                setMediaSessionArtwork(null);
             }
         }
 
@@ -754,6 +851,63 @@
 
             await audioCtx.resume();
             return audioCtx;
+        }
+
+        function updatePlayButtonLabel() {
+            if (!playButton) {
+                return;
+            }
+
+            if (!playback.started) {
+                playButton.textContent = 'Start stream';
+            } else {
+                playButton.textContent = isMuted ? 'Unmute stream' : 'Mute stream';
+            }
+        }
+
+        function setMutedState(nextMuted) {
+            const targetMuted = Boolean(nextMuted);
+            const stateChanged = targetMuted !== isMuted;
+
+            isMuted = targetMuted;
+
+            if (stateChanged && !isMuted && userVolume === 0) {
+                userVolume = 0.6;
+                if (volumeSlider) {
+                    const restoredValue = 60;
+                    volumeSlider.value = restoredValue;
+                    updateVolumeSliderVisual(restoredValue);
+                }
+            }
+
+            updatePlayButtonLabel();
+            applyVolume();
+
+            if (!isMuted && playback.started) {
+                drainQueue();
+            }
+        }
+
+        async function startPlaybackFlow() {
+            await ensureAudioContext();
+
+            if (!playback.started) {
+                playback.started = true;
+
+                if (userVolume === 0) {
+                    userVolume = 1;
+                    if (volumeSlider) {
+                        volumeSlider.value = 100;
+                        updateVolumeSliderVisual(100);
+                    }
+                }
+            }
+
+            if (silentAudio) {
+                silentAudio.currentTime = 0;
+            }
+
+            setMutedState(false);
         }
 
         function getChunkBytes(chunk) {
@@ -857,42 +1011,19 @@
         }
 
         playButton.addEventListener('click', async () => {
-            await ensureAudioContext();
-
             if (!playback.started) {
-                playback.started = true;
-                if (userVolume === 0) {
-                    userVolume = 1;
-                    if (volumeSlider) {
-                        volumeSlider.value = 100;
-                        updateVolumeSliderVisual(100);
-                    }
-                }
-                isMuted = false;
-                // if (playHint) {
-                //     playHint.innerHTML = 'Powered by <a class="meta-link" href="https://example.com" target="_blank" rel="noopener">DJ da potato</a> from GrieferPig';
-                // }
-                playButton.textContent = 'Mute stream';
-                applyVolume();
-                drainQueue();
-            } else {
-                isMuted = !isMuted;
-                if (!isMuted && userVolume === 0) {
-                    userVolume = 0.6;
-                    if (volumeSlider) {
-                        const restoredValue = 60;
-                        volumeSlider.value = restoredValue;
-                        updateVolumeSliderVisual(restoredValue);
-                    }
-                }
-                playButton.textContent = isMuted ? 'Unmute stream' : 'Mute stream';
-                applyVolume();
+                silentAudio.play().catch(e => log(`Silent audio failed to play: ${e.message}`)); // FIX
+                await startPlaybackFlow();
+                return;
             }
+            silentAudio.pause(); // FIX
+            await ensureAudioContext();
+            setMutedState(!isMuted);
         });
 
         if (volumeSlider) {
             updateVolumeSliderVisual(volumeSlider.value);
-            volumeSlider.addEventListener('input', (event) => {
+            volumeSlider.addEventListener('input', async (event) => {
                 const rawValue = Number(event.target.value);
                 const clampedValue = Math.max(0, Math.min(100, rawValue));
                 userVolume = clampedValue / 100;
@@ -903,14 +1034,19 @@
                 }
 
                 if (userVolume === 0) {
-                    isMuted = true;
-                    playButton.textContent = 'Unmute stream';
-                } else if (isMuted) {
-                    isMuted = false;
-                    playButton.textContent = 'Mute stream';
+                    setMutedState(true);
+                    return;
+                }
+
+                await ensureAudioContext();
+
+                if (isMuted) {
+                    setMutedState(false);
+                    return;
                 }
 
                 applyVolume();
+                updatePlayButtonLabel();
             });
         }
 
@@ -925,6 +1061,7 @@
             if (playback.started && playback.audioCtx) {
                 playback.audioCtx.resume();
             }
+            updateMediaSessionPlaybackState();
         });
 
         socket.on('disconnect', () => {
@@ -973,6 +1110,28 @@
         });
 
         // Uptime is kept in sync via syncUptime when track_state events arrive.
+
+        if (mediaSessionState.supported) {
+            refreshMediaSessionMetadata();
+            updateMediaSessionPlaybackState();
+
+            try {
+                navigator.mediaSession.setActionHandler('play', async () => {
+                    silentAudio.play().catch(e => log(`Silent audio failed to play: ${e.message}`)); // FIX
+                    console.log('Media session play action received');
+                    await startPlaybackFlow();
+                });
+                navigator.mediaSession.setActionHandler('pause', () => {
+                    silentAudio.pause(); // FIX
+                    console.log('Media session pause action received');
+                    setMutedState(true);
+                });
+            } catch (error) {
+                console.warn('Unable to set media session handlers:', error);
+            }
+        }
+
+        updatePlayButtonLabel();
 
         setConnectionState('Connecting…', false);
     </script>
