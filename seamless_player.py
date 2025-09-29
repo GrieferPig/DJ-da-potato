@@ -113,10 +113,10 @@ def calculate_key_compatibility(key1, key2):
     if distance == 0:
         return 100
     if distance == 1:
-        return 60
+        return 75
     if distance == 2:
-        return 30
-    return 0
+        return 50
+    return 10
 
 
 def load_library_from_analytics(directory=ANALYTICS_DIRECTORY):
@@ -167,23 +167,39 @@ def find_best_next_track(current_track, available_tracks):
     if not available_tracks:
         return None
 
-    best_candidate, highest_score = None, -1
-    # Shuffle to add some randomness if scores are equal
-    for candidate in random.sample(available_tracks, len(available_tracks)):
-        # The check for current_track["path"] is implicitly handled by how
-        # available_tracks is generated in the main loop.
+    # Collect all candidates with their scores
+    scored_candidates = []
+    for candidate in available_tracks:
+        # randomly skip some candidates with same key to add variety
+        if candidate["key"] == current_track["key"]:
+            if random.random() < 0.3:
+                continue
+
         key_score = calculate_key_compatibility(current_track["key"], candidate["key"])
         bpm_diff = abs(current_track["bpm"] - candidate["bpm"])
         bpm_score = max(0, 100 - (bpm_diff * 5))  # Score based on BPM proximity
 
         # Weighted score
-        total_score = (key_score * 0.65) + (bpm_score * 0.35)
+        total_score = (key_score * 0.6) + (bpm_score * 0.4)
+        scored_candidates.append((total_score, candidate))
 
-        if total_score > highest_score:
-            highest_score, best_candidate = total_score, candidate
+    # Sort by score descending
+    scored_candidates.sort(key=lambda x: x[0], reverse=True)
 
-    # Fallback to a random choice from available tracks if no suitable candidate is found
-    return best_candidate or random.choice(available_tracks)
+    # Get top 10 (or all if fewer)
+    top_candidates = scored_candidates[:10]
+
+    # Randomly select from top 10
+    if top_candidates:
+        candidate = random.choice(top_candidates)[1]
+        logging.info(
+            f"Selected next track, previous key: {current_track['key']}, bpm: {current_track['bpm']:.2f}; "
+            f"next key: {candidate['key']}, bpm: {candidate['bpm']:.2f}; "
+            f"score: {top_candidates[0][0]:.2f}"
+        )
+
+    # Fallback (though unlikely if available_tracks is not empty)
+    return random.choice(available_tracks)
 
 
 def get_cover_art(track_path):
