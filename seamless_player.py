@@ -195,7 +195,7 @@ def find_best_next_track(current_track, available_tracks):
         if candidate["key"] == current_track["key"]:
             if random.random() < 0.3:
                 continue
-            if _find_best_next_track_call_count % 4 == 0:
+            if _find_best_next_track_call_count % 3 == 0:
                 continue
 
         key_score = calculate_key_compatibility(current_track["key"], candidate["key"])
@@ -203,7 +203,7 @@ def find_best_next_track(current_track, available_tracks):
         bpm_diff = max(0, bpm_diff - 5)
         bpm_score = max(0, 100 - (bpm_diff * 5))
 
-        if _find_best_next_track_call_count % 1 == 0:
+        if _find_best_next_track_call_count % 5 == 0:
             total_score = (key_score * 0.95) - (bpm_score * 0.05)
         else:
             total_score = (key_score * 0.95) + (bpm_score * 0.05)
