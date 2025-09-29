@@ -273,7 +273,7 @@
             width: 150px;
             height: 4px;
             border-radius: 999px;
-            background: linear-gradient(90deg, #3df7a4, #1db954);
+            --slider-bg: rgba(255, 255, 255, 0.15);
             outline: none;
         }
 
@@ -309,13 +309,13 @@
         .volume-slider::-webkit-slider-runnable-track {
             height: 4px;
             border-radius: 999px;
-            background: linear-gradient(90deg, #3df7a4, #1db954);
+            background: var(--slider-bg);
         }
 
         .volume-slider::-moz-range-track {
             height: 4px;
             border-radius: 999px;
-            background: linear-gradient(90deg, #3df7a4, #1db954);
+            background: var(--slider-bg);
         }
 
         @media (max-width: 640px) {
@@ -651,7 +651,8 @@
                 return;
             }
             const percentage = Math.max(0, Math.min(100, Number(value)));
-            volumeSlider.style.background = `linear-gradient(90deg, #3df7a4 ${percentage}%, rgba(255, 255, 255, 0.15) ${percentage}%)`;
+            const bg = `linear-gradient(90deg, #3df7a4 ${percentage}%, rgba(255, 255, 255, 0.15) ${percentage}%)`;
+            volumeSlider.style.setProperty('--slider-bg', bg);
         }
 
         function applyVolume() {
