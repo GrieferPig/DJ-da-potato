@@ -197,6 +197,7 @@ def find_best_next_track(current_track, available_tracks):
             f"next key: {candidate['key']}, bpm: {candidate['bpm']:.2f}; "
             f"score: {top_candidates[0][0]:.2f}"
         )
+        return candidate
 
     # Fallback (though unlikely if available_tracks is not empty)
     return random.choice(available_tracks)
